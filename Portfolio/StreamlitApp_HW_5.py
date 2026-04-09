@@ -117,7 +117,7 @@ def display_explanation(input_df, session, aws_bucket):
     
    # make sure the index ([0:2]) is consistent with the number of pipeline steps. If you have 5 steps, then it should be 4, etc.
     
-    preprocessing_pipeline = Pipeline(steps=best_pipeline.steps[0:2]) 
+    preprocessing_pipeline = Pipeline(steps=best_pipeline.steps[0:3]) 
     input_df_transformed = preprocessing_pipeline.transform(input_df) 
     feature_names = best_pipeline[0:2].get_feature_names_out() 
     input_df_transformed = pd.DataFrame(input_df_transformed, columns=feature_names) 
