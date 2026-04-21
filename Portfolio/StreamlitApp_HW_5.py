@@ -61,6 +61,8 @@ MODEL_INFO = {
         "inputs": [{"name": k, "type": "number", "min": -100.0, "max": 100.0, "default": 0.0, "step": 10.0} for k in ["AOS_CR_Cum","AFL_CR_Cum"]] 
 }
 
+# make sure the input names match the what you have in the notebook 
+
 def load_pipeline(_session, bucket, key):
     s3_client = _session.client('s3')
     filename=MODEL_INFO["pipeline"]
