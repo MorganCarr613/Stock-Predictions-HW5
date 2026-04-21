@@ -147,3 +147,41 @@ def convert_input_pca_regression(request_body, request_content_type):
         closest_row[SP500_2] = AFL_CR_Cum
     
         return closest_row
+
+# You need to update below with the code in the infrence file 
+
+def convert_project(request_body, request_content_type):
+    print(f"Receiving data of type: {request_content_type}")
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.abspath(os.path.join(current_dir, '..'))
+    file_path = os.path.join(project_root, 'Portfolio/SP500Data.csv')
+
+    dataset = pd.read_csv(file_path,index_col=0)
+
+    target = 'ORCL'
+
+    option = 1
+
+    if option == 2:
+
+        X = FeatureEngineer(windows=[10,15]).transform(dataset[[target]])
+    
+        techIndicator_1 = 'RSI_15'
+        RSI_15 = json.loads(request_body)[techIndicator_1]
+        techIndicator_2 = 'MOM_15'
+        MOM_15 = json.loads(request_body)[techIndicator_2]
+
+        # Calculate the distance
+        distances = np.sqrt(
+            (X[techIndicator_1] - RSI_15)**2 + 
+            (X[techIndicator_2] - MOM_15)**2
+        )
+        
+        closest_index = distances.idxmin()
+        closest_row = X.loc[[closest_index]]
+    
+        closest_row[techIndicator_1] = RSI_15
+        closest_row[techIndicator_2] = MOM_15
+    
+        return closest_row
