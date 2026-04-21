@@ -4,6 +4,233 @@ import statsmodels.api as sm
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import PowerTransformer
 from scipy.stats import skew
+from gensim.models import Word2Vec
+
+
+
+
+# Handling missing values for numeric features 
+
+class NumericImputer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        self.numeric_cols_ = X.select_dtypes(include=['number']).columns
+        self.medians_ = X[self.numeric_cols_].median()
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        X[self.numeric_cols_] = X[self.numeric_cols_].fillna(self.medians_)
+        return X
+
+# Handling missing values for categorical features 
+
+class CategoricalImputer(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        self.cat_cols_ = X.select_dtypes(exclude=['number']).columns
+        self.modes_ = X[self.cat_cols_].mode().iloc[0]
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        X[self.cat_cols_] = X[self.cat_cols_].fillna(self.modes_)
+        return X
+
+
+# Recoding Variables
+
+class RecodeTextFeatures(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        for col in X.select_dtypes(include=['object']).columns:
+            X[col] = X[col].astype(str).str.lower().str.strip()
+
+        return X
+
+# Adjusting data types 
+
+class AdjustDataTypes(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        for col in X.columns:
+            if X[col].dtype == 'object':
+                X[col] = X[col].astype('category')
+
+        return X
+
+# Removing outliers in numeric features
+
+class CapOutliers(BaseEstimator, TransformerMixin):
+    def __init__(self, z_thresh=3):
+        self.z_thresh = z_thresh
+
+    def fit(self, X, y=None):
+        self.numeric_cols_ = X.select_dtypes(include=['number']).columns
+        self.means_ = X[self.numeric_cols_].mean()
+        self.stds_ = X[self.numeric_cols_].std().replace(0, 1)
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        upper = self.means_ + self.z_thresh * self.stds_
+        lower = self.means_ - self.z_thresh * self.stds_
+
+        X[self.numeric_cols_] = X[self.numeric_cols_].clip(lower, upper, axis=1)
+
+        return X
+
+# Transforming variable scale
+
+class ScaleNumericFeatures(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        self.numeric_cols_ = X.select_dtypes(include=['number']).columns
+        self.means_ = X[self.numeric_cols_].mean()
+        self.stds_ = X[self.numeric_cols_].std().replace(0, 1)
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        X[self.numeric_cols_] = (X[self.numeric_cols_] - self.means_) / self.stds_
+        return X
+
+# Removing features that have a high ratio of missing values
+
+class DropHighMissing(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=0.9):
+        self.threshold = threshold
+
+    def fit(self, X, y=None):
+        self.cols_to_drop_ = X.columns[X.isnull().mean() > self.threshold]
+        return self
+
+    def transform(self, X):
+        return X.drop(columns=self.cols_to_drop_, errors='ignore')
+
+# Removing features that do not vary
+
+class DropConstantFeatures(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        self.cols_to_drop_ = X.columns[X.nunique() <= 1]
+        return self
+
+    def transform(self, X):
+        return X.drop(columns=self.cols_to_drop_, errors='ignore')
+
+# Removing features that are near constant
+
+class DropNearConstantFeatures(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=0.95):
+        self.threshold = threshold
+
+    def fit(self, X, y=None):
+        self.cols_to_drop_ = [
+            col for col in X.columns
+            if X[col].value_counts(normalize=True).iloc[0] > self.threshold
+        ]
+        return self
+
+    def transform(self, X):
+        return X.drop(columns=self.cols_to_drop_, errors='ignore')
+
+
+# Removing categorical variables with high cardinality
+
+class DropHighCardinality(BaseEstimator, TransformerMixin):
+    def __init__(self, threshold=200):
+        self.threshold = threshold
+
+    def fit(self, X, y=None):
+        self.cols_to_drop_ = [
+            col for col in X.select_dtypes(include=['category', 'object']).columns
+            if X[col].nunique() > self.threshold
+        ]
+        return self
+
+    def transform(self, X):
+        return X.drop(columns=self.cols_to_drop_, errors='ignore')
+
+# Transforming date time into different scales 
+
+class AddTimeFeatures(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        if 'TransactionDT' in X.columns:
+            X['hour'] = (X['TransactionDT'] / 3600) % 24
+            X['day'] = (X['TransactionDT'] / (3600 * 24)).astype(int)
+            X['week'] = (X['TransactionDT'] / (3600 * 24 * 7)).astype(int)
+
+        return X
+
+# Creating interaction features (Card and Address information)
+
+class AddCardAddrInteraction(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        if 'card1' in X.columns and 'addr1' in X.columns:
+            X['card_addr'] = X['card1'].astype(str) + "_" + X['addr1'].astype(str)
+
+        return X
+
+# Creating interaction feature 
+
+class AddEmailMatch(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        if 'P_emaildomain' in X.columns and 'R_emaildomain' in X.columns:
+            X['email_match'] = (
+                X['P_emaildomain'].astype(str) == X['R_emaildomain'].astype(str)
+            ).astype(int)
+
+        return X
+
+# Creating aggregation
+
+class AddCardAvgAmount(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        if 'card1' in X.columns:
+            self.map_ = X.groupby('card1')['TransactionAmt'].mean().to_dict()
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        if 'card1' in X.columns:
+            X['card_avg_amt'] = X['card1'].map(self.map_)
+        return X
+
+
+# Creating ratio
+
+class AddAmountRatio(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        if 'TransactionAmt' in X.columns and 'card_avg_amt' in X.columns:
+            X['amt_ratio'] = X['TransactionAmt'] / (X['card_avg_amt'] + 1)
+
+        return X
 
 class AutoPowerTransformer(BaseEstimator, TransformerMixin):
     def __init__(self, threshold=0.75):
@@ -137,6 +364,8 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
             # 5. Simple Moving Average
             X_out[f'MA_{w}'] = data.rolling(w, min_periods=w).mean()
 
+            # 6. Oscillators
+
         return X_out
 
 class PairFeatureEngineer(BaseEstimator, TransformerMixin):
@@ -210,6 +439,32 @@ class PairFeatureEngineer(BaseEstimator, TransformerMixin):
         rolling_mean = spread_series.rolling(self.window).mean()
         rolling_std = spread_series.rolling(self.window).std()
         return (spread_series - rolling_mean) / rolling_std
+
+class Word2VecTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, vector_size=100, window=5, min_count=1):
+        self.vector_size = vector_size
+        self.window = window
+        self.min_count = min_count
+        self.model = None
+
+    def fit(self, X, y=None):
+        # create the word2vec model
+        sentences = [str(row[0]).split() for row in X]
+        self.model = Word2Vec(sentences, vector_size=self.vector_size, 
+                              window=self.window, min_count=self.min_count)
+        return self
+
+    def transform(self, X):
+        # Convert each headline into the average of its word vectors
+        def get_mean_vector(text):
+            words = str(text).split()
+            # Filter words that actually exist in the Word2Vec vocabulary
+            vectors = [self.model.wv[w] for w in words if w in self.model.wv]
+            if not vectors:
+                return np.zeros(self.vector_size)
+            return np.mean(vectors, axis=0)
+
+        return np.array([get_mean_vector(row[0]) for row in X])
 
 # --- Usage Example ---
 # extractor = PairFeatureExtractor(window=60)
