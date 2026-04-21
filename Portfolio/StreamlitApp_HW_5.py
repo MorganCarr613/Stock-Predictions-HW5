@@ -55,13 +55,11 @@ sm_session = sagemaker.Session(boto_session=session)
 
 MODEL_INFO = {
         "endpoint": aws_endpoint,
-        "explainer": 'explainer_pca.shap', 
-        "pipeline": 'finalized_pca_model.tar.gz', 
-        "keys": ["AOS_CR_Cum","AFL_CR_Cum"], 
-        "inputs": [{"name": k, "type": "number", "min": -100.0, "max": 100.0, "default": 0.0, "step": 10.0} for k in ["AOS_CR_Cum","AFL_CR_Cum"]] 
-}
+        "explainer": 'explainer_project.shap', 
+        "pipeline": 'fine_tuned_gbm_pipeline.tar.gz', 
+        "keys": ["num_C1","num_D1"],   # change these to match the names of the two most important feature 
+        "inputs": [{"name": k, "type": "number", "min": -100.0, "max": 100.0, "default": 0.0, "step": 10.0} for k in ["num_C1","num_D1"]] 
 
-# make sure the input names match the what you have in the notebook 
 
 def load_pipeline(_session, bucket, key):
     s3_client = _session.client('s3')
@@ -103,7 +101,8 @@ def call_model_api(input_df):
     try:
         raw_pred = predictor.predict(input_df)
         pred_val = pd.DataFrame(raw_pred).values[-1][0]
-        return round(float(pred_val), 4), 200
+        mapping = {-1: "SELL", 0: "HOLD", 1: "BUY"}
+        return mapping.get(pred_val), 200
     except Exception as e:
         return f"Error: {str(e)}", 500
 
@@ -117,21 +116,20 @@ def display_explanation(input_df, session, aws_bucket):
 
     best_pipeline = load_pipeline(session, aws_bucket, 'sklearn-pipeline-deployment')
     
-   # make sure the index ([0:2]) is consistent with the number of pipeline steps. If you have 5 steps, then it should be 4, etc.
-    
-    preprocessing_pipeline = Pipeline(steps=best_pipeline.steps[0:3]) 
+    preprocessing_pipeline = Pipeline(steps=best_pipeline.steps[:-2]) 
     input_df_transformed = preprocessing_pipeline.transform(input_df) 
-    feature_names = best_pipeline[0:3].get_feature_names_out() 
+    feature_names = best_pipeline[:-2].get_feature_names_out() 
     input_df_transformed = pd.DataFrame(input_df_transformed, columns=feature_names) 
     shap_values = explainer(input_df_transformed) 
-  
+
     st.subheader("🔍 Decision Transparency (SHAP)")
     fig, ax = plt.subplots(figsize=(10, 4))
-    shap.plots.waterfall(shap_values[0], max_display=10)
+    shap.plots.waterfall(shap_values[0, :, 0])
     st.pyplot(fig)
-    # top feature 
-    top_feature = pd.Series(shap_values[0].values, index=shap_values[0].feature_names).abs().idxmax()
+    # top feature   
+    top_feature = pd.Series(shap_values[0, :, 0].values, index=shap_values[0, :, 0].feature_names).abs().idxmax()
     st.info(f"**Business Insight:** The most influential factor in this decision was **{top_feature}**.")
+
 
 # Streamlit UI
 st.set_page_config(page_title="ML Deployment", layout="wide")
@@ -159,7 +157,4 @@ if submitted:
         display_explanation(user_inputs,session, aws_bucket)
     else:
         st.error(res)
-
-
-
 
